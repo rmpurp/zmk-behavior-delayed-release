@@ -10,7 +10,8 @@ properties:
     required: true
   mods:
     type: int
-    required: true
+    required: false
   keep-mods:
     type: int
     required: false
+s
