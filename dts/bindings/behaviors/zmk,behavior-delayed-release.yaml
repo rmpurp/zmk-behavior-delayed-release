@@ -14,4 +14,3 @@ properties:
   keep-mods:
     type: int
     required: false
-s
