@@ -53,3 +53,5 @@ static const struct behavior_driver_api delayed_release_driver_api = {
                             &delayed_release_driver_api);                    // API struct
 
 DT_INST_FOREACH_STATUS_OKAY(BEHAVIOR_DELAYED_RELEASE_INST)
+
+#endif /* DT_HAS_COMPAT_STATUS_OKAY(DT_DRV_COMPAT) */
