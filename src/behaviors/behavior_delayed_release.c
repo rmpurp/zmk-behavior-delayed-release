@@ -45,12 +45,12 @@ static const struct behavior_driver_api delayed_release_driver_api = {
     };                                                                        \
                                                                               \
     BEHAVIOR_DT_INST_DEFINE(n,                                                \ // Instance Number (Automatically populated by macro)
-                            delayed_release_init,                          \ // Initialization Function
+                            delayed_release_init,                             \ // Initialization Function
                             NULL,                                             \ // Power Management Device Pointer
                             NULL,                                             \ // Behavior Data Pointer
-                            &behavior_delayed_release_config_##n,                   \ // Behavior Configuration Pointer
+                            &behavior_delayed_release_config_##n,             \ // Behavior Configuration Pointer
                             POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_DEFAULT  \ // Initialization Level, Device Priority
-                            &delayed_release_driver_api);                    // API struct
+                            &delayed_release_driver_api);                       // API struct
 
 DT_INST_FOREACH_STATUS_OKAY(BEHAVIOR_DELAYED_RELEASE_INST)
 
