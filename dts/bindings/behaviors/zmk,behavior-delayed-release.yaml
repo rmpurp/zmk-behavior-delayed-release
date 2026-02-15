@@ -2,15 +2,9 @@ description: Delayed Release Behavior
 
 compatible: "zmk,behavior-delayed-release"
 
-include: two_param.yaml # Additional parameters
+include: one_param.yaml
 
 properties:
   bindings:
     type: phandle-array
     required: true
-  mods:
-    type: int
-    required: false
-  keep-mods:
-    type: int
-    required: false

@@ -4,54 +4,113 @@
 #include <zephyr/device.h>
 #include <zephyr/logging/log.h>
 #include <drivers/behavior.h>
+#include <zmk/behavior.h>
 
 LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 
-#include <zmk/behavior.h>
+#define DELAYED_RELEASE_PREREQUISITE_KEY 0
+#define DELAYED_RELEASE_TRIGGER_KEY 1
 
-#if DT_HAS_COMPAT_STATUS_OKAY(DT_DRV_COMPAT)
+#define DELAYED_RELEASE_MAX_CONFIGS 10
 
-// Instance-specific Data struct (Optional)
-struct delayed_release_data {
-    bool data_param1;
-    bool data_param2;
-    bool data_param3;
+// #if DT_HAS_COMPAT_STATUS_OKAY(DT_DRV_COMPAT)
+
+struct behavior_delayed_release_config {
+    struct zmk_behavior_binding prerequisite_behavior;
+    struct zmk_behavior_binding delayed_release_behavior;
+    struct zmk_behavior_binding trigger_behavior;
+    int index;
 };
 
-// Initialization Function (Optional)
-static int delayed_release_init(const struct device *dev) {
+struct behavior_delayed_release_data {
+    bool trigger_key_pressed;
+    bool prequisite_key_pressed;
+    bool delayed_release_behavior_active;
+};
+
+static int behavior_delayed_release_init(const struct device *dev) {
     return 0;
 };
 
 static int on_delayed_release_binding_pressed(struct zmk_behavior_binding *binding,
-                                                 struct zmk_behavior_binding_event event) {
+                                              struct zmk_behavior_binding_event event) {
+    const struct device *dev = zmk_behavior_get_binding(binding->behavior_dev);
+    const struct behavior_delayed_release_config *cfg = dev->config;
+    struct behavior_delayed_release_data *state = dev->data;
+
+    if (binding->param1 == DELAYED_RELEASE_PREREQUISITE_KEY) {
+        // Prerequisite key pressed; trigger its behavior and record it in the state.
+        zmk_behavior_invoke_binding(&cfg->prerequisite_behavior, event, true);
+        state->prequisite_key_pressed = true;
+    } else if (binding->param1 == DELAYED_RELEASE_TRIGGER_KEY) {
+        // If the delayed release behavior has not yet been triggered,
+        // trigger it now and record it in the state.
+        if (!state->delayed_release_behavior_active) {
+            zmk_behavior_invoke_binding(&cfg->delayed_release_behavior, event, true);
+            state->delayed_release_behavior_active = true;
+        }
+
+        // Also invoke the primary behavior of the trigger key and record that it is pressed.
+        zmk_behavior_invoke_binding(&cfg->trigger_behavior, event, true);
+        state->trigger_key_pressed = true;
+    }
     return ZMK_BEHAVIOR_OPAQUE;
 }
 
 static int on_delayed_release_binding_released(struct zmk_behavior_binding *binding,
-                                                  struct zmk_behavior_binding_event event) {
+                                               struct zmk_behavior_binding_event event) {
+    const struct device *dev = zmk_behavior_get_binding(binding->behavior_dev);
+    const struct behavior_delayed_release_config *cfg = dev->config;
+    struct behavior_delayed_release_data *state = dev->data;
+
+    if (binding->param1 == DELAYED_RELEASE_PREREQUISITE_KEY) {
+        // Pre-requisite key released.
+        // If the delayed release behavior was active, deactivate it first.
+        // However, if the trigger key is still pressed, we'll wait until the trigger key is released
+        // to release the delayed release behavior. (See below)
+        if (state->delayed_release_behavior_active && !state->trigger_key_pressed) {
+            zmk_behavior_invoke_binding(&cfg->delayed_release_behavior, event, false);
+            state->delayed_release_behavior_active = false;
+        }
+
+        zmk_behavior_invoke_binding(&cfg->prerequisite_behavior, event, false);
+        state->prequisite_key_pressed = false;
+    } else if (binding->param1 == DELAYED_RELEASE_TRIGGER_KEY) {
+        // Trigger key released.
+        zmk_behavior_invoke_binding(&cfg->trigger_behavior, event, false);
+        state->trigger_key_pressed = false;
+
+        if (!state->prequisite_key_pressed && state->delayed_release_behavior_active) {
+            // (From above) in this case, the prerequisite key was released, but the trigger
+            // key is still pressed. Now we can release the delayed release behavior.
+            zmk_behavior_invoke_binding(&cfg->delayed_release_behavior, event, false);
+            state->delayed_release_behavior_active = false;
+        }
+    }
     return ZMK_BEHAVIOR_OPAQUE;
 }
 
 // API struct
-static const struct behavior_driver_api delayed_release_driver_api = {
+static const struct behavior_driver_api behavior_delayed_release_driver_api = {
     .binding_pressed = on_delayed_release_binding_pressed,
-    .binding_released = on_delayed_release_binding_pressed,
+    .binding_released = on_delayed_release_binding_released,
 };
 
-#define BEHAVIOR_DELAYED_RELEASE_INST(n)                                      \
-    static struct behavior_delayed_release_config_##n {                       \
-        .config_param1 = bar1;                                                \
-    };                                                                        \
-                                                                              \
-    BEHAVIOR_DT_INST_DEFINE(n,                                                \ // Instance Number (Automatically populated by macro)
-                            delayed_release_init,                             \ // Initialization Function
-                            NULL,                                             \ // Power Management Device Pointer
-                            NULL,                                             \ // Behavior Data Pointer
-                            &behavior_delayed_release_config_##n,             \ // Behavior Configuration Pointer
-                            POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_DEFAULT  \ // Initialization Level, Device Priority
-                            &delayed_release_driver_api);                       // API struct
+#define BEHAVIOR_DELAYED_RELEASE_INST(n)                                                    \
+    static struct behavior_delayed_release_config behavior_delayed_release_config_##n = {   \
+        .prerequisite_behavior = DT_PROP(DT_INST_PHANDLE_BY_IDX(n, bindings, 0), label),    \
+        .delayed_release_behavior = DT_PROP(DT_INST_PHANDLE_BY_IDX(n, bindings, 1), label), \
+        .trigger_behavior = DT_PROP(DT_INST_PHANDLE_BY_IDX(n, bindings, 2), label),         \
+        .index = n;                                                                         \
+    };                                                                                      \
+    BEHAVIOR_DT_INST_DEFINE(n,                                                              \
+                            behavior_delayed_release_init,                                  \
+                            NULL,                                                           \
+                            &behavior_delayed_release_data_##n,                             \
+                            &behavior_delayed_release_config_##n,                           \
+                            POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_DEFAULT                \
+                            &behavior_delayed_release_driver_api);
 
 DT_INST_FOREACH_STATUS_OKAY(BEHAVIOR_DELAYED_RELEASE_INST)
 
-#endif /* DT_HAS_COMPAT_STATUS_OKAY(DT_DRV_COMPAT) */
+// #endif /* DT_HAS_COMPAT_STATUS_OKAY(DT_DRV_COMPAT) */
